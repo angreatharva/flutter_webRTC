@@ -4,8 +4,9 @@ import '../services/signalling.service.dart';
 
 class JoinScreen extends StatefulWidget {
   final String selfCallerId;
+  final bool role;
 
-  const JoinScreen({super.key, required this.selfCallerId});
+  const JoinScreen({super.key, required this.selfCallerId,required this.role});
 
   @override
   State<JoinScreen> createState() => _JoinScreenState();
@@ -41,6 +42,7 @@ class _JoinScreenState extends State<JoinScreen> {
           callerId: callerId,
           calleeId: calleeId,
           offer: offer,
+          isDoctor: widget.role,
         ),
       ),
     );
@@ -57,6 +59,7 @@ class _JoinScreenState extends State<JoinScreen> {
       body: SafeArea(
         child: Stack(
           children: [
+            Text("Role: ${widget.role ? "Doctor" : "Patient"}"),
             Center(
               child: SizedBox(
                 width: MediaQuery.of(context).size.width * 0.9,

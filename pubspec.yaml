@@ -37,6 +37,12 @@ dependencies:
   socket_io_client: ^2.0.1
   flutter_webrtc: ^0.9.20
   webrtc_interface: ^1.2.2+hotfix.1
+  http: ^1.3.0
+  speech_to_text: ^7.0.0
+  permission_handler: ^11.4.0
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+  cross_file: ^0.3.4+2
 
 
 dev_dependencies:

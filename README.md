@@ -23,7 +23,7 @@ npm install
 
 ```js
 
-npm run start
+npm run server
 ```
 
 ---
