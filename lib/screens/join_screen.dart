@@ -98,7 +98,7 @@ class _JoinScreenState extends State<JoinScreen> {
                         side: const BorderSide(color: Colors.white30),
                       ),
                       child: const Text(
-                        "Invite",
+                        "Call",
                         style: TextStyle(
                           fontSize: 18,
                           color: Colors.white,

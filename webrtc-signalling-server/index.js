@@ -1,9 +1,32 @@
+// index.js (updated with MongoDB and API routes)
 const IO = require("socket.io");
 const ngrok = require("ngrok");
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
 
+// Create Express app
+const app = express();
 let port = process.env.PORT || 5000;
 
-const io = IO(port, {
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/call-transcription', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('MongoDB Connected'))
+.catch(err => console.log('MongoDB Connection Error:', err));
+
+// Routes
+app.use('/api/transcriptions', require('./routes/transcription.routes'));
+
+// Create HTTP server and attach socket.io
+const server = app.listen(port, () => console.log(`Server running on port ${port}`));
+const io = IO(server, {
   cors: {
     origin: true,
     methods: ["GET", "POST"],
@@ -50,6 +73,12 @@ io.on("connection", (socket) => {
       sender: socket.user,
       iceCandidate: iceCandidate,
     });
+  });
+  
+  // Handle transcription events
+  socket.on("transcription", (data) => {
+    // Broadcast to the room for real-time updates
+    socket.to(data.callId).emit("transcriptionUpdate", data);
   });
 });
 
