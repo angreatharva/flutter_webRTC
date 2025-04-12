@@ -22,7 +22,7 @@ exports.addTranscription = async (req, res) => {
 
     const savedTranscription = await newTranscription.save();
     
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
       data: savedTranscription
     });

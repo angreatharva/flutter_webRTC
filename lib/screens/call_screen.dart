@@ -2,7 +2,9 @@ import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/signalling.service.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class CallScreen extends StatefulWidget {
   final String callerId;
@@ -33,11 +35,20 @@ class _CallScreenState extends State<CallScreen> {
   bool isAudioOn = true, isVideoOn = true, isFrontCameraSelected = true;
   bool _isConnected = false; // 🔄 Connection state
 
+  final Dio dio = Dio();
+
+  stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+  String _transcription = "";
+  List<String> _transcriptionLog = [];
+
   @override
   void initState() {
+    _checkMicPermission();
     _localRTCVideoRenderer.initialize();
     _remoteRTCVideoRenderer.initialize();
     _setupPeerConnection();
+    _initSpeechRecognizer();
     super.initState();
   }
 
@@ -46,6 +57,149 @@ class _CallScreenState extends State<CallScreen> {
     if (mounted) {
       super.setState(fn);
     }
+  }
+
+  void _checkMicPermission() async {
+    final status = await Permission.microphone.request();
+    if (status != PermissionStatus.granted) {
+      print('Microphone permission denied');
+    }
+    else{
+      print('Microphone permission allowed');
+    }
+  }
+
+
+  void _initSpeechRecognizer() async {
+    bool available = await _speech.initialize(
+      onStatus: (val) => print('Speech status: $val'),
+      onError: (val) => print('Speech error: $val'),
+    );
+    if (available) {
+      print("Speech recognition available");
+    }
+    else{
+      print("Speech recognition unavailable");
+    }
+  }
+
+  void _listen() async {
+    print("_isListening: $_isListening");
+    if (!_isListening) {
+      // Start listening
+      bool available = await _speech.initialize(
+        onStatus: (status) {
+          print('_listen Speech status: $status');
+          if (status == 'done' || status == 'notListening') {
+            setState(() => _isListening = false);
+          }
+        },
+        onError: (errorNotification) {
+          print('Speech error: ${errorNotification.errorMsg}');
+          setState(() => _isListening = false);
+
+          // Auto-restart on timeout
+          if (errorNotification.errorMsg == 'error_speech_timeout') {
+            Future.delayed(Duration(milliseconds: 300), () {
+              _listen();
+            });
+          }
+        },
+      );
+
+      if (available) {
+        setState(() {
+          _isListening = true;
+          _transcription = "";
+        });
+
+        try {
+          await _speech.listen(
+            onResult: (result) {
+              setState(() {
+                _transcription = result.recognizedWords;
+
+                // When we get final results, add to log and send
+                if (result.finalResult && _transcription.isNotEmpty) {
+                  _transcriptionLog.add(_transcription);
+                  sendTranscription(_transcription);
+                  print("Final transcription: $_transcription");
+                }
+              });
+            },
+            listenFor: Duration(seconds: 30),
+            pauseFor: Duration(seconds: 3),
+            partialResults: true,
+            localeId: 'en_US',
+            cancelOnError: false,
+          );
+        } catch (e) {
+          print('Listen error: $e');
+          setState(() => _isListening = false);
+        }
+      } else {
+        print("Speech recognition not available");
+      }
+    }
+    else {
+      // Stop listening
+      _speech.stop();
+      setState(() => _isListening = false);
+
+      // Send any final transcription
+      if (_transcription.isNotEmpty) {
+        if (!_transcriptionLog.contains(_transcription)) {
+          _transcriptionLog.add(_transcription);
+          sendTranscription(_transcription);
+        }
+      }
+    }
+  }
+
+  // New function to send the transcription via Dio
+  Future<void> sendTranscription(String text) async {
+    if (text.trim().isEmpty) return;
+
+    final String role = widget.isDoctor ? "doctor" : "patient";
+    final String speakerId = widget.isDoctor ? widget.callerId : widget.calleeId;
+    final String callId = "call1";
+
+    final Map<String, dynamic> payload = {
+      "callId": callId,
+      "speakerId": speakerId,
+      "role": role,
+      "text": text,
+    };
+
+    try {
+      // Show a temporary indication that transcription is being sent
+      print("📝 Sending transcription: $text");
+
+      Response response = await dio.post(
+        "https://87ed-103-110-234-188.ngrok-free.app/api/transcriptions",
+        data: jsonEncode(payload),
+        options: Options(
+          headers: {"Content-Type": "application/json"},
+          sendTimeout: Duration(seconds: 5),
+          receiveTimeout: Duration(seconds: 5),
+        ),
+      );
+
+      if (response.statusCode == 201) {
+        print("✅ Transcription saved successfully");
+      } else {
+        print("❌ Failed to save transcription: ${response.data}");
+      }
+    } catch (error) {
+      print("❌ Error posting transcription: $error");
+      // Store failed transcripts to try again later if needed
+    }
+  }
+  // A function to simulate sending a transcription.
+  // In your actual implementation, this might be triggered by a transcription event.
+  void _simulateTranscription() {
+    print('_simulateTranscription');
+    _listen();
   }
 
   _setupPeerConnection() async {
@@ -240,33 +394,78 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 Positioned(
                   top: 16,
-                  left: 16,
+                  left: 0,
+                  right: 0,
                   child: !_isConnected
-                      ? Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      "🔗 Connecting...",
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  )
-                      : Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade700,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      "✅ Connected",
-                      style: TextStyle(color: Colors.white),
+                      ? Center(
+                        child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: const Text(
+                        "🔗 Connecting...",
+                        style: TextStyle(color: Colors.white),
+                                            ),
+                                          ),
+                      )
+                      : Center(
+                        child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                        color: Colors.green.shade700,
+                        borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: const Text(
+                        "✅ Connected",
+                        style: TextStyle(color: Colors.white),
+                                            ),
+                                          ),
+                      ),
+                ),
+                if (_isListening || _transcription.isNotEmpty)
+                  Positioned(
+                    top: 60,
+                    left: 16,
+                    right: 16,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                _isListening ? Icons.mic : Icons.mic_none,
+                                color: _isListening ? Colors.red : Colors.white,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isListening ? "Listening..." : "Transcription",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _transcription.isEmpty ? "..." : _transcription,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 Positioned(
                   right: 20,
                   bottom: 20,
@@ -303,9 +502,13 @@ class _CallScreenState extends State<CallScreen> {
                     onPressed: _switchCamera,
                   ),
                   IconButton(
-                    icon:
-                    Icon(isVideoOn ? Icons.videocam : Icons.videocam_off),
+                    icon: Icon(
+                        isVideoOn ? Icons.videocam : Icons.videocam_off),
                     onPressed: _toggleCamera,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.textsms),
+                    onPressed: _simulateTranscription,
                   ),
                 ],
               ),
@@ -323,6 +526,7 @@ class _CallScreenState extends State<CallScreen> {
     _remoteRTCVideoRenderer.dispose();
     _localStream?.dispose();
     _rtcPeerConnection?.dispose();
+    _speech.stop();
     super.dispose();
   }
 }

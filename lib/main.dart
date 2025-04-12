@@ -11,7 +11,7 @@ class VideoCallApp extends StatelessWidget {
   VideoCallApp({super.key});
 
   // WebSocket signaling server URL
-  final String websocketUrl = "https://a7c5-103-110-234-188.ngrok-free.app";
+  final String websocketUrl = "https://b4c1-103-104-226-58.ngrok-free.app";
 
   // Randomly generate caller ID
   final String selfCallerID =

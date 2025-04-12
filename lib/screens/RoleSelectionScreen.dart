@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:rtc/screens/join_screen.dart';
-import 'call_screen.dart'; // Adjust path if needed
 
 class RoleSelectionScreen extends StatelessWidget {
   final String selfCallerId;
