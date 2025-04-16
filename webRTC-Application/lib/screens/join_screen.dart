@@ -46,6 +46,9 @@ class _JoinScreenState extends State<JoinScreen> {
         ),
       ),
     );
+    if (mounted) {
+      setState(() => incomingSDPOffer = null);
+    }
   }
 
   @override
@@ -59,7 +62,7 @@ class _JoinScreenState extends State<JoinScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            Text("Role: ${widget.role ? "Doctor" : "Patient"}"),
+            // Text("Role: ${widget.role ? "Doctor" : "Patient"}"),
             Center(
               child: SizedBox(
                 width: MediaQuery.of(context).size.width * 0.9,

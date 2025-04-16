@@ -47,12 +47,28 @@ exports.getTranscriptions = async (req, res) => {
       });
     }
 
-    const transcriptions = await Transcription.find({ callId }).sort('timestamp');
-    
+    // Find all transcriptions for the given callId and sort by timestamp
+    const transcriptions = await Transcription.find({ callId })
+      .sort({ timestamp: 1 })
+      .lean();
+
+    // Group the transcriptions by callId
+    const groupedTranscriptions = transcriptions.reduce((acc, curr) => {
+      if (!acc[curr.callId]) {
+        acc[curr.callId] = [];
+      }
+      acc[curr.callId].push({
+        // _id: curr._id,
+        // speakerId: curr.speakerId,
+        role: curr.role,
+        text: curr.text,
+        timestamp: curr.timestamp
+      });
+      return acc;
+    }, {});
+
     return res.status(200).json({
-      success: true,
-      count: transcriptions.length,
-      data: transcriptions
+      data: groupedTranscriptions[callId] || []
     });
   } catch (error) {
     console.error('Error fetching transcriptions:', error);
