@@ -709,7 +709,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   IconButton(
-                    icon: Icon(isAudioOn ? Icons.mic_off : Icons.mic),
+                    icon: Icon(isAudioOn ? Icons.mic : Icons.mic_off),
                     onPressed: _toggleMic,
                   ),
                   IconButton(
