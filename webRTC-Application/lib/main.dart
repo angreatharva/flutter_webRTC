@@ -1,6 +1,8 @@
 import 'dart:math';
+import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:rtc/screens/RoleSelectionScreen.dart';
+import 'package:rtc/services/api_service.dart';
 import 'services/signalling.service.dart';
 
 void main() {
@@ -11,7 +13,8 @@ class VideoCallApp extends StatelessWidget {
   VideoCallApp({super.key});
 
   // WebSocket signaling server URL
-  final String websocketUrl = "https://b4c1-103-104-226-58.ngrok-free.app";
+  final String websocketUrl = "${ApiService.baseUrl}";
+
 
   // Randomly generate caller ID
   final String selfCallerID =
@@ -25,7 +28,7 @@ class VideoCallApp extends StatelessWidget {
       selfCallerID: selfCallerID,
     );
 
-    return MaterialApp(
+    return GetMaterialApp(
       debugShowCheckedModeBanner: false,
       darkTheme: ThemeData.dark().copyWith(
         useMaterial3: true,

@@ -1,10 +1,23 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/api_service.dart';
 import '../services/signalling.service.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_to_text.dart';
+
+// New class for transcription segments
+class TranscriptionSegment {
+  final String text;
+  final DateTime timestamp;
+
+  TranscriptionSegment({
+    required this.text,
+    required this.timestamp,
+  });
+}
 
 class CallScreen extends StatefulWidget {
   final String callerId;
@@ -24,32 +37,57 @@ class CallScreen extends StatefulWidget {
   State<CallScreen> createState() => _CallScreenState();
 }
 
-class _CallScreenState extends State<CallScreen> {
+class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
+  // Existing WebRTC related variables
   final socket = SignallingService.instance.socket;
   final _localRTCVideoRenderer = RTCVideoRenderer();
   final _remoteRTCVideoRenderer = RTCVideoRenderer();
   MediaStream? _localStream;
   RTCPeerConnection? _rtcPeerConnection;
   List<RTCIceCandidate> rtcIceCadidates = [];
-
   bool isAudioOn = true, isVideoOn = true, isFrontCameraSelected = true;
-  bool _isConnected = false; // 🔄 Connection state
+  bool _isConnected = false;
 
+  // New Speech Recognition variables
   final Dio dio = Dio();
-
-  stt.SpeechToText _speech = stt.SpeechToText();
+  final SpeechToText _speechToText = SpeechToText();
   bool _isListening = false;
-  String _transcription = "";
-  List<String> _transcriptionLog = [];
+  String _text = '';
+  String _previousText = '';
+  String _fullTranscription = '';
+  bool _isInitialized = false;
+  DateTime? _recordingStartTime;
+  bool _isRecording = false;
+  Timer? _restartSpeechTimer;
+  Timer? _keepAliveTimer;
+  List<TranscriptionSegment> _segments = [];
+  int _restartAttempts = 0;
+  final int _maxRestartAttempts = 10;
+  bool _showTranscription = false;
 
   @override
   void initState() {
     _checkMicPermission();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeSpeech();
     _localRTCVideoRenderer.initialize();
     _remoteRTCVideoRenderer.initialize();
     _setupPeerConnection();
-    _initSpeechRecognizer();
     super.initState();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_isRecording) {
+        _stopListening();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (_isRecording && !_isListening) {
+        _startListening();
+      }
+    }
   }
 
   @override
@@ -63,145 +101,306 @@ class _CallScreenState extends State<CallScreen> {
     final status = await Permission.microphone.request();
     if (status != PermissionStatus.granted) {
       print('Microphone permission denied');
-    }
-    else{
+    } else {
       print('Microphone permission allowed');
     }
   }
 
+  // Initialize speech recognition
+  Future<void> _initializeSpeech() async {
+    try {
+      // Attempt to configure audio session to disable sounds
+      try {
+        await SystemChannels.platform.invokeMethod<void>('flutter.disableSoundEffects', true);
+      } catch (e) {
+        print('Could not disable sound effects: $e');
+      }
 
-  void _initSpeechRecognizer() async {
-    bool available = await _speech.initialize(
-      onStatus: (val) => print('Speech status: $val'),
-      onError: (val) => print('Speech error: $val'),
-    );
-    if (available) {
-      print("Speech recognition available");
-    }
-    else{
-      print("Speech recognition unavailable");
-    }
-  }
-
-  void _listen() async {
-    print("_isListening: $_isListening");
-    if (!_isListening) {
-      // Start listening
-      bool available = await _speech.initialize(
+      // Initialize the speech recognition
+      bool available = await _speechToText.initialize(
+        onError: (error) {
+          print("Speech recognition error: ${error.errorMsg}");
+          if (_isRecording && (error.errorMsg.contains('error_no_match') ||
+              error.errorMsg.contains('error_speech_timeout'))) {
+            _restartListening();
+          }
+        },
         onStatus: (status) {
-          print('_listen Speech status: $status');
-          if (status == 'done' || status == 'notListening') {
-            setState(() => _isListening = false);
+          print("Speech recognition status: $status");
+          if (status == "done" && _isRecording) {
+            _restartListening();
           }
         },
-        onError: (errorNotification) {
-          print('Speech error: ${errorNotification.errorMsg}');
-          setState(() => _isListening = false);
-
-          // Auto-restart on timeout
-          if (errorNotification.errorMsg == 'error_speech_timeout') {
-            Future.delayed(Duration(milliseconds: 300), () {
-              _listen();
-            });
-          }
-        },
+        debugLogging: true, // Enable for troubleshooting
       );
+
+      print("Speech recognition available: $available");
 
       if (available) {
         setState(() {
-          _isListening = true;
-          _transcription = "";
+          _isInitialized = true;
         });
-
-        try {
-          await _speech.listen(
-            onResult: (result) {
-              setState(() {
-                _transcription = result.recognizedWords;
-
-                // When we get final results, add to log and send
-                if (result.finalResult && _transcription.isNotEmpty) {
-                  _transcriptionLog.add(_transcription);
-                  sendTranscription(_transcription);
-                  print("Final transcription: $_transcription");
-                }
-              });
-            },
-            listenFor: Duration(seconds: 30),
-            pauseFor: Duration(seconds: 3),
-            partialResults: true,
-            localeId: 'en_US',
-            cancelOnError: false,
-          );
-        } catch (e) {
-          print('Listen error: $e');
-          setState(() => _isListening = false);
-        }
       } else {
-        print("Speech recognition not available");
-      }
-    }
-    else {
-      // Stop listening
-      _speech.stop();
-      setState(() => _isListening = false);
-
-      // Send any final transcription
-      if (_transcription.isNotEmpty) {
-        if (!_transcriptionLog.contains(_transcription)) {
-          _transcriptionLog.add(_transcription);
-          sendTranscription(_transcription);
+        // If not available, show an error
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Speech recognition not available')),
+          );
         }
+      }
+    } catch (e) {
+      print("Error initializing speech: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error initializing speech: $e')),
+        );
       }
     }
   }
 
-  // New function to send the transcription via Dio
-  Future<void> sendTranscription(String text) async {
-    if (text.trim().isEmpty) return;
+  // Toggle speech recognition
+  void _toggleSpeechRecognition() async {
+    // Check if speech is initialized first
+    if (!_isInitialized) {
+      print("Speech recognition not initialized yet");
+      await _initializeSpeech();
 
-    final String role = widget.isDoctor ? "doctor" : "patient";
-    final String speakerId = widget.isDoctor ? widget.callerId : widget.calleeId;
-    final String callId = "call1";
+      if (!_isInitialized) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please wait, speech recognition is initializing')),
+        );
+        return;
+      }
+    }
 
-    final Map<String, dynamic> payload = {
-      "callId": callId,
-      "speakerId": speakerId,
-      "role": role,
-      "text": text,
-    };
+    if (_isRecording) {
+      _stopRecording();
+    } else {
+      _startRecording();
+    }
+  }
 
+  // Start recording session
+  void _startRecording() {
+    if (!_isRecording) {
+      setState(() {
+        _isRecording = true;
+        _recordingStartTime = DateTime.now();
+        _text = '';
+        _previousText = '';
+        _fullTranscription = '';
+        _segments = [];
+        _restartAttempts = 0;
+        _showTranscription = true;
+      });
+
+      // Start listening for speech
+      _startListening();
+
+      // Create a keep-alive timer
+      _keepAliveTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+        if (_isRecording && !_isListening && _restartAttempts < _maxRestartAttempts) {
+          print("Keep-alive check - restarting speech recognition");
+          _startListening();
+        }
+      });
+    } else {
+      _stopRecording();
+    }
+  }
+
+  // Start the speech recognition
+  void _startListening() {
+    if (!_isListening && _isInitialized) {
+      try {
+        setState(() {
+          _isListening = true;
+        });
+
+        // Disable system sounds if possible before starting recognition
+        try {
+          SystemChannels.textInput.invokeMethod('TextInput.hide');
+          SystemSound.play(SystemSoundType.click);
+        } catch (e) {
+          print('Failed to disable system sounds: $e');
+        }
+
+        // Start listening
+        _speechToText.listen(
+          onResult: (result) {
+            print("Recognition result: ${result.recognizedWords}");
+            if (result.finalResult) {
+              _previousText = _text;
+
+              if (result.recognizedWords.isNotEmpty) {
+                _segments.add(TranscriptionSegment(
+                  text: result.recognizedWords,
+                  timestamp: DateTime.now(),
+                ));
+
+                if (_fullTranscription.isEmpty) {
+                  _fullTranscription = result.recognizedWords;
+                } else {
+                  _fullTranscription += ' ' + result.recognizedWords;
+                }
+              }
+            }
+
+            setState(() {
+              if (result.recognizedWords.isNotEmpty) {
+                _text = result.recognizedWords;
+              } else if (_previousText.isNotEmpty) {
+                _text = _previousText;
+              }
+            });
+          },
+          localeId: 'en_US',
+          listenMode: ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        );
+      } catch (e) {
+        print("Error starting speech recognition: $e");
+        setState(() {
+          _isListening = false;
+        });
+
+        if (_isRecording) {
+          _restartListening();
+        }
+      }
+    } else if (!_isInitialized) {
+      print("Cannot start listening - speech recognition not initialized");
+      _initializeSpeech().then((_) {
+        if (_isInitialized && _isRecording) {
+          _startListening();
+        }
+      });
+    }
+  }
+
+  // Restart the speech recognition
+  void _restartListening() {
+    print("Restarting speech recognition");
+
+    _restartSpeechTimer?.cancel();
+
+    if (_speechToText.isListening) {
+      _speechToText.stop();
+    }
+
+    setState(() {
+      _isListening = false;
+    });
+
+    _restartAttempts++;
+
+    // Instead of stopping recording, just log the attempt count
+    if (_restartAttempts >= _maxRestartAttempts) {
+      print("Maximum restart attempts reached, but continuing to try");
+      // Reset restart attempts to avoid integer overflow during very long sessions
+      _restartAttempts = 0;
+    }
+
+    final delay = Duration(milliseconds: 500 + (_restartAttempts * 100));
+
+    _restartSpeechTimer = Timer(delay, () {
+      if (_isRecording) {
+        _startListening();
+      }
+    });
+  }
+
+  // Stop the recording session
+  void _stopRecording() {
+    if (_isRecording) {
+      _stopListening();
+      _sendTranscriptionToServer();
+
+      _restartSpeechTimer?.cancel();
+      _keepAliveTimer?.cancel();
+
+      setState(() {
+        _isRecording = false;
+      });
+    }
+  }
+
+  // Stop listening for speech
+  void _stopListening() {
+    if (_speechToText.isListening) {
+      _speechToText.stop();
+    }
+    setState(() {
+      _isListening = false;
+    });
+  }
+
+  // Send the transcription to the server
+  Future<void> _sendTranscriptionToServer() async {
     try {
-      // Show a temporary indication that transcription is being sent
-      print("📝 Sending transcription: $text");
+      final textToSend = _fullTranscription.isNotEmpty
+          ? _fullTranscription
+          : _segments.isNotEmpty
+          ? _segments.map((s) => s.text).join(' ')
+          : _text;
 
-      Response response = await dio.post(
-        "https://87ed-103-110-234-188.ngrok-free.app/api/transcriptions",
-        data: jsonEncode(payload),
+      if (textToSend.isEmpty) {
+        return;
+      }
+
+      print("Sending data to server: $textToSend");
+
+      final response = await dio.post(
+        '${ApiService.baseUrl}/api/transcriptions',
+        data: {
+          'callId': widget.callerId + '_' + widget.calleeId, // Use call IDs to identify the call
+          'speakerId': widget.isDoctor ? 'doctor_${widget.callerId}' : 'patient_${widget.callerId}',
+          'role': widget.isDoctor ? 'doctor' : 'patient',
+          'text': textToSend,
+        },
         options: Options(
-          headers: {"Content-Type": "application/json"},
-          sendTimeout: Duration(seconds: 5),
-          receiveTimeout: Duration(seconds: 5),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          validateStatus: (status) {
+            return status! < 500;
+          },
+          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
         ),
       );
 
-      if (response.statusCode == 201) {
-        print("✅ Transcription saved successfully");
+      print("Response status: ${response.statusCode}");
+      print("Response data: ${response.data}");
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Transcription sent successfully')),
+        );
       } else {
-        print("❌ Failed to save transcription: ${response.data}");
+        print("Error status code: ${response.statusCode}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error sending data: ${response.statusCode}')),
+        );
       }
-    } catch (error) {
-      print("❌ Error posting transcription: $error");
-      // Store failed transcripts to try again later if needed
+    } catch (e) {
+      print("Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending data: $e')),
+      );
     }
   }
-  // A function to simulate sending a transcription.
-  // In your actual implementation, this might be triggered by a transcription event.
-  void _simulateTranscription() {
-    print('_simulateTranscription');
-    _listen();
+
+  // Toggle transcription visibility
+  void _toggleTranscriptionVisibility() {
+    setState(() {
+      _showTranscription = !_showTranscription;
+    });
   }
 
+  // WebRTC setup code
   _setupPeerConnection() async {
     print("🔧 Creating Peer Connection...");
     _rtcPeerConnection = await createPeerConnection({
@@ -348,6 +547,9 @@ class _CallScreenState extends State<CallScreen> {
 
   _leaveCall() {
     print("📴 Leaving call...");
+    if (_isRecording) {
+      _stopRecording();
+    }
     Navigator.pop(context);
   }
 
@@ -392,80 +594,42 @@ class _CallScreenState extends State<CallScreen> {
                   _remoteRTCVideoRenderer,
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 ),
+                // Connection status indicator
                 Positioned(
                   top: 16,
                   left: 0,
                   right: 0,
                   child: !_isConnected
                       ? Center(
-                        child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: const Text(
-                        "🔗 Connecting...",
-                        style: TextStyle(color: Colors.white),
-                                            ),
-                                          ),
-                      )
-                      : Center(
-                        child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                        color: Colors.green.shade700,
-                        borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: const Text(
-                        "✅ Connected",
-                        style: TextStyle(color: Colors.white),
-                                            ),
-                                          ),
-                      ),
-                ),
-                if (_isListening || _transcription.isNotEmpty)
-                  Positioned(
-                    top: 60,
-                    left: 16,
-                    right: 16,
                     child: Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.black54,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                _isListening ? Icons.mic : Icons.mic_none,
-                                color: _isListening ? Colors.red : Colors.white,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _isListening ? "Listening..." : "Transcription",
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _transcription.isEmpty ? "..." : _transcription,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ],
+                      child: const Text(
+                        "🔗 Connecting...",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  )
+                      : Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade700,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        "✅ Connected",
+                        style: TextStyle(color: Colors.white),
                       ),
                     ),
                   ),
+                ),
+                // Local video feed
                 Positioned(
                   right: 20,
                   bottom: 20,
@@ -479,7 +643,64 @@ class _CallScreenState extends State<CallScreen> {
                       RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                     ),
                   ),
-                )
+                ),
+                // Speech recognition status and transcription
+                if (_showTranscription)
+                  Positioned(
+                    left: 20,
+                    top: 80,
+                    right: 20,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              if (_isRecording && _isListening)
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              SizedBox(width: 2),
+                              Text(
+                                _isRecording
+                                    ? "Recording..."
+                                    : "Recording stopped",
+                                style: TextStyle(
+                                  color: _isRecording ? Colors.red : Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Spacer(),
+                              IconButton(
+                                icon: Icon(Icons.close, color: Colors.white, size: 16),
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(),
+                                onPressed: _toggleTranscriptionVisibility,
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            _text.isEmpty ? 'Listening...' : _text,
+                            style: TextStyle(color: Colors.white),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ]),
             ),
             Padding(
@@ -488,8 +709,18 @@ class _CallScreenState extends State<CallScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   IconButton(
-                    icon: Icon(isAudioOn ? Icons.mic : Icons.mic_off),
+                    icon: Icon(isAudioOn ? Icons.mic_off : Icons.mic),
                     onPressed: _toggleMic,
+                  ),
+                  IconButton(
+                    icon: Icon(_isRecording
+                        ? Icons.record_voice_over
+                        : Icons.voice_over_off),
+                    color: _isRecording ? Colors.red : null,
+                    onPressed: _toggleSpeechRecognition,
+                    tooltip: _isRecording
+                        ? 'Stop Transcription'
+                        : 'Start Transcription',
                   ),
                   IconButton(
                     icon: const Icon(Icons.call_end),
@@ -506,10 +737,6 @@ class _CallScreenState extends State<CallScreen> {
                         isVideoOn ? Icons.videocam : Icons.videocam_off),
                     onPressed: _toggleCamera,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.textsms),
-                    onPressed: _simulateTranscription,
-                  ),
                 ],
               ),
             ),
@@ -522,11 +749,14 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     print("🧹 Disposing resources");
+    WidgetsBinding.instance.removeObserver(this);
     _localRTCVideoRenderer.dispose();
     _remoteRTCVideoRenderer.dispose();
     _localStream?.dispose();
     _rtcPeerConnection?.dispose();
-    _speech.stop();
+    _restartSpeechTimer?.cancel();
+    _keepAliveTimer?.cancel();
+    _stopListening();
     super.dispose();
   }
 }
