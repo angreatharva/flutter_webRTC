@@ -177,7 +177,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             
             // App name
             Text(
-              'TeleMed Connect',
+              'NeuraLife',
               style: TextStyle(
                 fontSize: Get.width * 0.08,
                 fontWeight: FontWeight.bold,
