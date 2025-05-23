@@ -1,4 +1,5 @@
 const socketAuth = require('../middleware/socket.middleware');
+const { startTranscriptionStream, sendAudioChunk, stopTranscriptionStream } = require('./transcription.services');
 
 // Create a variable to hold the io instance for use across the application
 let io;
@@ -106,6 +107,24 @@ const setupSocketServer = (ioInstance) => {
     socket.on("transcription", (data) => {
       // Broadcast to the room for real-time updates
       socket.to(data.callId).emit("transcriptionUpdate", data);
+    });
+    
+    // When client starts sending audio for transcription
+    socket.on('startTranscription', (data) => {
+      // data: { callId, languageCode }
+      startTranscriptionStream(socket, data.callId, data.languageCode);
+    });
+
+    // When client sends an audio chunk
+    socket.on('audioChunk', (data) => {
+      // data: { callId, chunk (Buffer or base64) }
+      sendAudioChunk(socket, data.callId, data.chunk);
+    });
+
+    // When client stops transcription
+    socket.on('stopTranscription', (data) => {
+      // data: { callId }
+      stopTranscriptionStream(socket, data.callId);
     });
     
     // Handle disconnection
