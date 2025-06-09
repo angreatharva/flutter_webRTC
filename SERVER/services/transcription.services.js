@@ -3,7 +3,7 @@ const client = new speech.SpeechClient();
 
 const activeStreams = new Map(); // callId -> { recognizeStream, socket }
 
-function startTranscriptionStream(socket, callId, languageCode = 'en-AU') {
+function startTranscriptionStream(socket, callId, languageCode = 'en-IN') {
   // Set up Google streaming config
   const request = {
     config: {

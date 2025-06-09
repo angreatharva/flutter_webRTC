@@ -8,7 +8,8 @@ const socket = io('http://localhost:5000', {
 
 const CALL_ID = 'test-call-123';
 // Use a stereo, 44100 Hz, LINEAR16 PCM WAV file for testing
-const AUDIO_FILE = 'test_audio.wav'; // Path to your test audio file
+// const AUDIO_FILE = 'test_audio.wav'; // Path to your test audio file
+const AUDIO_FILE = '680a5614ea3772ef3ae5f16a.wav'; // Path to your test audio file
 
 socket.on('connect', () => {
   console.log('Connected to server');
@@ -22,7 +23,7 @@ socket.on('connect', () => {
   const stream = fs.createReadStream(AUDIO_FILE, { highWaterMark: 17640 }); // ~100ms per chunk
 
   stream.on('data', (chunk) => {
-    socket.emit('audioChunk', { callId: CALL_ID, chunk: chunk.toString('base64') });
+    socket.emit('audioChunk', { callId: CALL_ID, audioChunk: chunk.toString('base64') });
   });
 
   stream.on('end', () => {

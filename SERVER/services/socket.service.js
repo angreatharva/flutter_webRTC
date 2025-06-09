@@ -1,5 +1,6 @@
 const socketAuth = require('../middleware/socket.middleware');
 const { startTranscriptionStream, sendAudioChunk, stopTranscriptionStream } = require('./transcription.services');
+const webrtcAudioService = require('./webrtc-audio.service');
 
 // Create a variable to hold the io instance for use across the application
 let io;
@@ -111,20 +112,93 @@ const setupSocketServer = (ioInstance) => {
     
     // When client starts sending audio for transcription
     socket.on('startTranscription', (data) => {
-      // data: { callId, languageCode }
-      startTranscriptionStream(socket, data.callId, data.languageCode);
+      console.log(`[Socket] startTranscription received:`, data);
+      // data: { callId, languageCode, saveToWav, sampleRate, channels, encoding }
+      const saveToWav = data.saveToWav !== undefined ? data.saveToWav : true;
+      const options = {
+        languageCode: data.languageCode || 'en-US',
+        sampleRate: data.sampleRate || 44100,
+        channels: data.channels || 2,
+        encoding: data.encoding || 'LINEAR16'
+      };
+      console.log(`[Socket] Starting transcription for callId=${data.callId}, saveToWav=${saveToWav}, options=`, options);
+      // Initialize an audio session (for saving)
+      const sessionInfo = webrtcAudioService.initAudioSession(
+        data.callId,
+        saveToWav,
+        options
+      );
+      // Start the real-time transcription stream (for Google STT)
+      startTranscriptionStream(socket, data.callId, options.languageCode);
+      // Let the client know the session was created successfully
+      socket.emit('transcriptionSessionCreated', {
+        callId: data.callId,
+        sessionId: sessionInfo.sessionId,
+        wavFilePath: sessionInfo.wavFilePath ? true : false
+      });
+      console.log(`Audio transcription session started for call: ${data.callId}`);
     });
 
-    // When client sends an audio chunk
     socket.on('audioChunk', (data) => {
-      // data: { callId, chunk (Buffer or base64) }
-      sendAudioChunk(socket, data.callId, data.chunk);
+      if (!data || !data.callId || !data.audioChunk) {
+        console.error('[Socket] Invalid audioChunk data:', data);
+        return;
+      }
+      console.log(`[Socket] audioChunk received: callId=${data.callId}, chunkSize=${data.audioChunk.length}, type=${typeof data.audioChunk}`);
+      // data: { callId, chunk (Buffer or base64), transcribe }
+      const transcribe = data.transcribe !== undefined ? data.transcribe : true;
+      // Process the audio chunk (for saving)
+      webrtcAudioService.processAudioChunk(
+        data.callId,
+        data.audioChunk,
+        socket,
+        transcribe
+      );
+      // Forward the audio chunk to the transcription stream (for Google STT)
+      sendAudioChunk(socket, data.callId, data.audioChunk);
     });
 
-    // When client stops transcription
     socket.on('stopTranscription', (data) => {
+      console.log(`[Socket] stopTranscription received:`, data);
       // data: { callId }
+      const sessionInfo = webrtcAudioService.finalizeAudioSession(data.callId, socket);
+      // Stop the real-time transcription stream (for Google STT)
       stopTranscriptionStream(socket, data.callId);
+      if (sessionInfo) {
+        socket.emit('transcriptionSessionFinalized', {
+          callId: data.callId,
+          wavFilePath: sessionInfo.wavFilePath ? true : false,
+          duration: sessionInfo.duration,
+          chunks: sessionInfo.chunks
+        });
+        console.log(`Audio transcription session finalized for call: ${data.callId}`);
+      }
+    });
+    
+    // Process an existing WAV file for transcription
+    socket.on('transcribeWavFile', (data) => {
+      // data: { wavFilePath, callId }
+      if (!data.wavFilePath) {
+        socket.emit('transcriptionError', { 
+          callId: data.callId, 
+          error: 'No WAV file path provided' 
+        });
+        return;
+      }
+      
+      const sessionId = webrtcAudioService.transcribeWavFile(
+        data.wavFilePath, 
+        socket, 
+        data.callId
+      );
+      
+      socket.emit('transcriptionSessionCreated', {
+        callId: data.callId || sessionId,
+        sessionId: sessionId,
+        wavFilePath: true
+      });
+      
+      console.log(`Transcription started for WAV file: ${data.wavFilePath}`);
     });
     
     // Handle disconnection

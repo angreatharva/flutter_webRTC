@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:convert'; // for base64Encode
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -7,6 +9,7 @@ import '../controllers/user_controller.dart';
 import '../services/signalling.service.dart';
 import '../controllers/calling_controller.dart';
 import '../utils/theme_constants.dart';
+import '../plugins/audio_forker/audio_forker.dart';
 
 class CallScreen extends StatefulWidget {
   final String callerId;
@@ -39,6 +42,10 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   bool isAudioOn = true, isVideoOn = true, isFrontCameraSelected = true;
   bool _isConnected = false;
   bool _webrtcInitialized = false;
+  
+  // Audio forking for transcription
+  bool _isTranscribing = false;
+  StreamSubscription<Uint8List>? _audioStreamSub;
 
   // UI variables
   final Color _primaryColor = const Color(0xFF2A7DE1); // Medical blue
@@ -64,7 +71,32 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     _remoteRTCVideoRenderer.initialize();
     _setupPeerConnection();
     _startCallTimer();
+    _initializeAudioForker();
     super.initState();
+  }
+  
+  // Initialize the audio forker for transcription (static API)
+  void _initializeAudioForker() async {
+    final success = await AudioForker.initialize();
+      if (success) {
+      debugPrint('🎤 AudioForker (native) initialized successfully');
+      // Listen to audio data stream for debugging
+      int? _lastChunkTime;
+      _audioStreamSub = AudioForker.audioDataStream.listen((chunk) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        int delta = _lastChunkTime == null ? 0 : (now - _lastChunkTime!);
+        _lastChunkTime = now;
+        debugPrint('DART: Sending audio chunk of \\${chunk.length} bytes, first 10: \\${chunk.take(10).toList()}, time since last chunk: \\${delta}ms');
+        socket?.emit('audioChunk', {
+          'callId': widget.callerId,
+          'audioChunk': base64Encode(chunk),
+          'transcribe': true,
+          'timestamp': now,
+        });
+      });
+      } else {
+      debugPrint('❌ Failed to initialize AudioForker (native)');
+      }
   }
 
   void _startCallTimer() {
@@ -286,24 +318,39 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   }
 
   _leaveCall() {
+    _stopTranscription();
     _showEndCallDialog();
   }
-
+  
   // Clean up resources when call ends
   Future<void> _cleanupCall() async {
-    // Stop timers
+    // 1. Stop transcription (if running, this also stops native audio forker)
+    await _stopTranscription();
+
+    // 2. Cancel audio stream subscription and dispose audio forker
+    await _audioStreamSub?.cancel();
+    await AudioForker.dispose();
+
+    // 3. Stop timers
     _callDurationTimer?.cancel();
-    
-    // Close WebRTC connection
+
+    // 4. Close WebRTC connection and dispose video renderers
     _localStream?.getTracks().forEach((track) => track.stop());
     await _rtcPeerConnection?.close();
     await _localRTCVideoRenderer.dispose();
     await _remoteRTCVideoRenderer.dispose();
-    
-    // If this is a doctor and we have a request ID, mark the call as completed
+
+    // 5. Remove any socket listeners specific to this call (if any)
+    // Example: socket?.off('eventName');
+
+    // 6. Mark call as completed if needed
     if (widget.isDoctor && widget.requestId != null) {
       await _completeCallRequest();
     }
+
+    // 7. Null out references (optional)
+    _localStream = null;
+    _rtcPeerConnection = null;
   }
   
   // Mark call as completed on the server
@@ -314,6 +361,45 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
         'completed'
       );
       debugPrint("📝 Call marked as completed on server");
+    }
+  }
+  
+  // Start audio transcription using static AudioForker API
+  _startTranscription() async {
+    if (!_isTranscribing) {
+      // 1. Tell server to start transcription session
+      socket?.emit('startTranscription', {
+        'callId': widget.callerId,
+        'languageCode': 'en-US',
+        'saveToWav': true,
+        'sampleRate': 44100,
+        'channels': 2,
+        'encoding': 'LINEAR16',
+      });
+      debugPrint('DART: Sent startTranscription with 44100/2');
+
+      // 2. Start native audio forker
+      await AudioForker.startAudioForking();
+      setState(() {
+        _isTranscribing = true;
+      });
+      debugPrint('📝 Audio transcription started');
+    }
+  }
+  
+  // Stop audio transcription using static AudioForker API
+  _stopTranscription() async {
+    if (_isTranscribing) {
+      // 4. Tell server to stop transcription session
+      socket?.emit('stopTranscription', {
+        'callId': widget.callerId,
+      });
+      debugPrint('DART: Sent stopTranscription');
+      await AudioForker.stopAudioForking();
+      setState(() {
+        _isTranscribing = false;
+      });
+      debugPrint('🛑 Audio transcription stopped');
     }
   }
 
@@ -618,6 +704,14 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
                         tooltip: isVideoOn ? 'Turn Off Camera' : 'Turn On Camera',
                       ),
                       
+                      // Transcription toggle
+                      _buildControlButton(
+                        icon: _isTranscribing ? Icons.record_voice_over : Icons.voice_over_off,
+                        color: _isTranscribing ? _secondaryColor : Color(0XFF9A9D9A),
+                        onPressed: _isTranscribing ? _stopTranscription : _startTranscription,
+                        tooltip: _isTranscribing ? 'Stop Transcription' : 'Start Transcription',
+                      ),
+                      
                       // Camera flip
                       _buildControlButton(
                         icon: Icons.switch_camera,
@@ -681,13 +775,15 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    debugPrint("🧹 Cleaning up call resources");
+    WidgetsBinding.instance.removeObserver(this);
     _callDurationTimer?.cancel();
     _localStream?.getTracks().forEach((track) => track.stop());
     _rtcPeerConnection?.close();
     _localRTCVideoRenderer.dispose();
     _remoteRTCVideoRenderer.dispose();
-    WidgetsBinding.instance.removeObserver(this);
+    // Clean up audio forker (static API)
+    _audioStreamSub?.cancel();
+    AudioForker.dispose();
     super.dispose();
   }
 
