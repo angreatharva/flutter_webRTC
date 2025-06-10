@@ -14,6 +14,11 @@ function startTranscriptionStream(socket, callId, languageCode = 'en-IN') {
       model: 'latest_long',
       enableWordTimeOffsets: true,
       enableWordConfidence: true,
+      diarizationConfig: {
+        enableSpeakerDiarization: true,
+        minSpeakerCount: 2,
+        maxSpeakerCount: 2
+      }
     },
     interimResults: true,
   };
