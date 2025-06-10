@@ -229,17 +229,22 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     if (widget.offer != null) {
       debugPrint("📞 Incoming call detected...");
 
-      socket!.on("IceCandidate", (data) {
+      // Remove any previous listeners before adding new ones
+      socket?.off("IceCandidate");
+      socket?.on("IceCandidate", (data) {
         debugPrint("❄️ ICE Candidate received");
         String candidate = data["iceCandidate"]["candidate"];
         String sdpMid = data["iceCandidate"]["id"];
         int sdpMLineIndex = data["iceCandidate"]["label"];
-
-        _rtcPeerConnection!.addCandidate(RTCIceCandidate(
-          candidate,
-          sdpMid,
-          sdpMLineIndex,
-        ));
+        if (_rtcPeerConnection != null) {
+          _rtcPeerConnection!.addCandidate(RTCIceCandidate(
+            candidate,
+            sdpMid,
+            sdpMLineIndex,
+          ));
+        } else {
+          debugPrint("ICE candidate received but _rtcPeerConnection is null. Ignoring.");
+        }
       });
 
       await _rtcPeerConnection!.setRemoteDescription(
@@ -263,27 +268,32 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
       _rtcPeerConnection!.onIceCandidate =
           (RTCIceCandidate candidate) => rtcIceCadidates.add(candidate);
 
-      socket!.on("callAnswered", (data) async {
+      // Remove any previous listeners before adding new ones
+      socket?.off("callAnswered");
+      socket?.on("callAnswered", (data) async {
         debugPrint("📥 Call answered. Setting remote description");
+        if (_rtcPeerConnection != null) {
+          await _rtcPeerConnection!.setRemoteDescription(
+            RTCSessionDescription(
+              data["sdpAnswer"]["sdp"],
+              data["sdpAnswer"]["type"],
+            ),
+          );
 
-        await _rtcPeerConnection!.setRemoteDescription(
-          RTCSessionDescription(
-            data["sdpAnswer"]["sdp"],
-            data["sdpAnswer"]["type"],
-          ),
-        );
-
-        for (RTCIceCandidate candidate in rtcIceCadidates) {
-          socket!.emit("IceCandidate", {
-            "calleeId": widget.calleeId,
-            "iceCandidate": {
-              "id": candidate.sdpMid,
-              "label": candidate.sdpMLineIndex,
-              "candidate": candidate.candidate
-            }
-          });
+          for (RTCIceCandidate candidate in rtcIceCadidates) {
+            socket!.emit("IceCandidate", {
+              "calleeId": widget.calleeId,
+              "iceCandidate": {
+                "id": candidate.sdpMid,
+                "label": candidate.sdpMLineIndex,
+                "candidate": candidate.candidate
+              }
+            });
+          }
+          debugPrint("🚀 All ICE candidates sent");
+        } else {
+          debugPrint("callAnswered received but _rtcPeerConnection is null. Ignoring.");
         }
-        debugPrint("🚀 All ICE candidates sent");
       });
 
       RTCSessionDescription offer = await _rtcPeerConnection!.createOffer();
@@ -334,23 +344,26 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     // 3. Stop timers
     _callDurationTimer?.cancel();
 
-    // 4. Close WebRTC connection and dispose video renderers
+    // 4. Remove all socket listeners related to this call
+    socket?.off("IceCandidate");
+    socket?.off("callAnswered");
+    // Add more .off() as needed for other listeners
+
+    // 5. Close WebRTC connection and dispose video renderers
     _localStream?.getTracks().forEach((track) => track.stop());
     await _rtcPeerConnection?.close();
     await _localRTCVideoRenderer.dispose();
     await _remoteRTCVideoRenderer.dispose();
 
-    // 5. Remove any socket listeners specific to this call (if any)
-    // Example: socket?.off('eventName');
+    // 6. Null out references
+    _localStream = null;
+    _rtcPeerConnection = null;
+    _webrtcInitialized = false;
 
-    // 6. Mark call as completed if needed
+    // 7. Mark call as completed if needed
     if (widget.isDoctor && widget.requestId != null) {
       await _completeCallRequest();
     }
-
-    // 7. Null out references (optional)
-    _localStream = null;
-    _rtcPeerConnection = null;
   }
   
   // Mark call as completed on the server
@@ -784,6 +797,10 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     // Clean up audio forker (static API)
     _audioStreamSub?.cancel();
     AudioForker.dispose();
+    // Remove all socket listeners
+    socket?.off("IceCandidate");
+    socket?.off("callAnswered");
+    // Add more .off() as needed for other listeners
     super.dispose();
   }
 
