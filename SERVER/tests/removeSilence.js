@@ -3,7 +3,7 @@ const wav = require('wav-decoder');
 const wavEncoder = require('wav-encoder');
 
 // Config
-const inputFile = '680a5614ea3772ef3ae5f16a.wav';
+const inputFile = '680a5614ea3772ef3ae5f16a_copy.wav';
 const outputFile = 'output_no_silence.wav';
 const silenceThreshold = 0.005; // Amplitude threshold (0 to 1)
 const minSilenceDuration = 0.05; // seconds

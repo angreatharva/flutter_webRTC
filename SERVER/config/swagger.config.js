@@ -5,9 +5,9 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Capstone Project API',
+      title: 'Major Project API',
       version: '1.0.0',
-      description: 'API documentation for the Capstone Project - Healthcare Platform',
+      description: 'API documentation for the Major Project - Healthcare Platform',
       contact: {
         name: 'API Support',
         email: 'support@healthcare-platform.com'
