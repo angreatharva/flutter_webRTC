@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:flutter/services.dart';
 
 import '../services/auth_service.dart';
 import '../utils/theme_constants.dart';
@@ -170,7 +171,16 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
                     icon: Icons.phone_outlined,
                     hint: 'Phone Number',
                     keyboardType: TextInputType.phone,
-                    validator: (value) => value!.isEmpty ? 'Please enter your phone number' : null,
+                    maxLength: 10,
+                    validator: (value) {
+                      if (value!.isEmpty) {
+                        return 'Please enter your phone number';
+                      }
+                      if (!RegExp(r'^\d{10}$').hasMatch(value)) {
+                        return 'Please enter a valid 10-digit phone number';
+                      }
+                      return null;
+                    },
                   ),
                   SizedBox(height: Get.height * 0.02),
                   
@@ -367,6 +377,7 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
     required String hint,
     TextInputType keyboardType = TextInputType.text,
     required String? Function(String?) validator,
+    int? maxLength,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -399,10 +410,15 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
           ),
           filled: true,
           fillColor: Colors.white,
+          counterText: '', // Hide the character counter
         ),
         keyboardType: keyboardType,
         style: TextStyle(fontSize: Get.width * 0.04),
         validator: validator,
+        maxLength: maxLength,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+        ],
       ),
     );
   }

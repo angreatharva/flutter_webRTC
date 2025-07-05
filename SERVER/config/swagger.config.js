@@ -10,7 +10,7 @@ const options = {
       description: 'API documentation for the Major Project - Healthcare Platform',
       contact: {
         name: 'API Support',
-        email: 'support@healthcare-platform.com'
+        email: 'angreatharva08@gmail.com'
       },
       license: {
         name: 'ISC',
@@ -23,7 +23,7 @@ const options = {
         description: 'Development server',
       },
       {
-        url: 'https://healthcare-platform-api.example.com',
+        url: 'https://NeuraLife-api.example.com',
         description: 'Production server',
       }
     ],

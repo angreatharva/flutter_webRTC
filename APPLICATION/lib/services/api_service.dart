@@ -7,7 +7,7 @@ import 'auth_service.dart';
 
 class ApiService extends GetxService {
   // Base URL for the API server
-  static const String baseUrl = 'https://b092-103-110-234-187.ngrok-free.app';
+  static const String baseUrl = 'https://f552-202-134-190-247.ngrok-free.app';
 
   // Singleton instance
   static ApiService get instance => Get.find<ApiService>();

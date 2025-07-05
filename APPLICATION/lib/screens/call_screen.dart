@@ -10,6 +10,7 @@ import '../services/signalling.service.dart';
 import '../controllers/calling_controller.dart';
 import '../utils/theme_constants.dart';
 import '../plugins/audio_forker/audio_forker.dart';
+import 'session_summary_screen.dart';
 
 class CallScreen extends StatefulWidget {
   final String callerId;
@@ -72,6 +73,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     _setupPeerConnection();
     _startCallTimer();
     _initializeAudioForker();
+    _setupEndCallListener();
     super.initState();
   }
   
@@ -313,14 +315,19 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
         }
       }
       
-      // Use the calling controller to make the call with name
-      _callingController.makeCall(
-        widget.calleeId,
-        offer.toMap(),
-        callerName
-      );
+      // For doctors, show disclaimer dialog before sending SDP offer
+      if (widget.isDoctor) {
+        await _showDisclaimerDialog(offer.toMap(), callerName);
+      } else {
+        // For patients, directly make the call without showing disclaimer
+        _callingController.makeCall(
+          widget.calleeId,
+          offer.toMap(),
+          callerName
+        );
+        debugPrint("📞 Offer sent to callee with name: $callerName");
+      }
 
-      debugPrint("📞 Offer sent to callee with name: $callerName");
     }
 
     // Mark WebRTC as initialized and ready
@@ -330,6 +337,68 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   _leaveCall() {
     _stopTranscription();
     _showEndCallDialog();
+  }
+  
+  // Show disclaimer dialog for doctors before sending SDP offer
+  Future<void> _showDisclaimerDialog(Map<String, dynamic> offerMap, String callerName) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // User must tap button to proceed
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Medical Disclaimer',
+            style: TextStyle(
+              color: ThemeConstants.mainColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text(
+                  'By proceeding with this call, you acknowledge that:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 10),
+                Text('1. This call may be recorded for quality and training purposes.'),
+                SizedBox(height: 5),
+                Text('2. Patient information shared during this call is confidential and protected by applicable privacy laws.'),
+                SizedBox(height: 5),
+                Text('3. This platform is not intended for emergency medical situations.'),
+                SizedBox(height: 10),
+                Text(
+                  'Do you agree to proceed with the call?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Okay',
+                style: TextStyle(
+                  color: ThemeConstants.mainColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              onPressed: () {
+                // Close the dialog
+                Navigator.of(context).pop();
+                
+                // Send the SDP offer to the patient
+                _callingController.makeCall(
+                  widget.calleeId,
+                  offerMap,
+                  callerName
+                );
+                
+                debugPrint("📞 Offer sent to callee with name: $callerName after disclaimer acceptance");
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
   
   // Clean up resources when call ends
@@ -444,6 +513,23 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
               onPressed: () async {
                 Navigator.of(context).pop(); // Close dialog
                 
+                // If doctor, notify the patient that the call is being ended
+                if (widget.isDoctor) {
+                  // Emit an event to notify the patient that the call is being ended
+                  socket?.emit('endCall', {
+                    'calleeId': widget.calleeId,
+                    'message': 'The doctor has ended the consultation.'
+                  });
+                  debugPrint('📞 Doctor ended call, notifying patient');
+                } else {
+                  // If patient, notify the doctor that the call is being ended
+                  socket?.emit('endCall', {
+                    'calleeId': widget.calleeId,
+                    'message': 'The patient has left the consultation.'
+                  });
+                  debugPrint('📞 Patient left call, notifying doctor');
+                }
+                
                 // Clean up resources
                 await _cleanupCall();
                 
@@ -453,7 +539,12 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
                 }
                 
                 // Leave call screen
-                getx.Get.back();
+                getx.Get.off(() => SessionSummaryScreen(
+                  callId: widget.requestId ?? widget.callerId,
+                  selfId: _userController.userId,
+                  otherId: widget.isDoctor ? widget.calleeId : widget.callerId,
+                  isDoctor: widget.isDoctor,
+                ));
               },
               child: const Text('End Call'),
             ),
@@ -786,6 +877,55 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     );
   }
 
+  // Set up listener for end call event from the other party
+  void _setupEndCallListener() {
+    socket?.off('endCall'); // Remove any existing listeners
+    socket?.on('endCall', (data) {
+      debugPrint('📞 Call ended by other party: ${data['message']}');
+      
+      // Show a dialog to inform the user that the call has been ended
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Call Ended'),
+            content: Text(data['message'] ?? 'The call has been ended by the other party.'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.of(context).pop(); // Close dialog
+                  
+                  // Clean up resources
+                  await _cleanupCall();
+                  
+                  // Leave call screen
+                  getx.Get.off(() => SessionSummaryScreen(
+                    callId: widget.requestId ?? widget.callerId,
+                    selfId: _userController.userId,
+                    otherId: widget.isDoctor ? widget.calleeId : widget.callerId,
+                    isDoctor: widget.isDoctor,
+                  ));
+                },
+                child: const Text('Okay'),
+              ),
+            ],
+          );
+        },
+      );
+    });
+  }
+  
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -797,6 +937,8 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     // Clean up audio forker (static API)
     _audioStreamSub?.cancel();
     AudioForker.dispose();
+    // Remove socket listeners
+    socket?.off('endCall');
     // Remove all socket listeners
     socket?.off("IceCandidate");
     socket?.off("callAnswered");

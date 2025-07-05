@@ -9,6 +9,11 @@ import '../screens/pending_calls_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/doctor_registration_screen.dart';
 import '../screens/user_registration_screen.dart';
+import '../screens/gamification/gamification_screen.dart';
+import '../screens/gamification/balloon_risk_game.dart';
+import '../screens/gamification/stroop_test_game.dart';
+import '../screens/gamification/memory_path_game.dart';
+import '../screens/gamification/memory_match_game.dart';
 import '../services/storage_service.dart';
 import 'auth_middleware.dart';
 import 'dart:developer' as dev;
@@ -32,6 +37,11 @@ class AppRoutes {
   static const String blogs = '/blogs';
   static const String createBlog = '/create-blog';
   static const String blogDetail = '/blog-detail';
+  static const String gamification = '/gamification';
+  static const String balloonRiskGame = '/balloon_risk_game';
+  static const String stroopTestGame = '/stroop_test_game';
+  static const String memoryPathGame = '/memory_path_game';
+  static const String memoryMatchGame = '/memory_match_game';
 
   // Initialize required controllers
   static void initControllers() {
@@ -67,6 +77,26 @@ class AppRoutes {
     GetPage(
       name: home,
       page: () => const HomeScreen(),
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
+      name: gamification,
+      page: () => const GamificationScreen(),
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
+      name: balloonRiskGame,
+      page: () => const BalloonRiskGame(),
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
+      name: stroopTestGame,
+      page: () => const StroopTestGame(),
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
+      name: memoryPathGame,
+      page: () => const MemoryPathGame(),
       middlewares: [AuthMiddleware()],
     ),
     GetPage(
@@ -152,5 +182,10 @@ class AppRoutes {
       name: doctorRegistration,
       page: () => const DoctorRegistrationScreen(),
     ),
+    GetPage(
+      name: memoryMatchGame,
+      page: () => const MemoryMatchGame(),
+      middlewares: [AuthMiddleware()],
+    ),
   ];
-} 
+}

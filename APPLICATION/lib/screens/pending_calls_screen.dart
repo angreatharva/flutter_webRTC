@@ -342,9 +342,11 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> with WidgetsBin
                                 final request = _callingController.pendingRequests[index];
                                 final patientName = request['patientId']['userName'] ?? 'Unknown Patient';
                                 final requestTime = request['requestedAt'] != null
-                                    ? DateTime.parse(request['requestedAt'])
+                                    ? DateTime.parse(request['requestedAt']).toLocal()
                                     : DateTime.now();
-                                final formattedTime = "${requestTime.hour}:${requestTime.minute.toString().padLeft(2, '0')}";
+                                final hour = requestTime.hour > 12 ? requestTime.hour - 12 : requestTime.hour;
+                                final amPm = requestTime.hour >= 12 ? 'PM' : 'AM';
+                                final formattedTime = "$hour:${requestTime.minute.toString().padLeft(2, '0')} $amPm";
                                 final requestId = request['_id'] ?? '';
                                 final patientCallerId = request['patientCallerId'] ?? '';
                                 final status = request['status'] ?? 'pending';

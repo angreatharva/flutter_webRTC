@@ -209,6 +209,22 @@ const setupSocketServer = (ioInstance) => {
       connectedUsers.delete(socket.user);
       console.log(`Remaining connected users: ${connectedUsers.size}`);
     });
+
+    socket.on("endCall", (data) => {
+      const { calleeId, message } = data;
+      // Relay the endCall event to the other party
+      socket.to(calleeId).emit("endCall", {
+        message: message || "The call has been ended by the other party."
+      });
+      console.log(`Relayed endCall from ${socket.user} to ${calleeId}`);
+    });
+
+    socket.on("sessionMessage", (data) => {
+      // data: { callId, to, from, message, timestamp }
+      socket.to(data.to).emit("sessionMessage", data);
+      // Optionally, save to DB for chat history
+      console.log(`Relayed sessionMessage from ${data.from} to ${data.to} for call ${data.callId}`);
+    });
   });
 };
 

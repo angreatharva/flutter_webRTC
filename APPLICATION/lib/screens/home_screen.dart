@@ -8,6 +8,7 @@ import '../utils/theme_constants.dart';
 import '../widgets/custom_bottom_nav.dart';
 import '../widgets/health_tracking_card.dart';
 import '../widgets/health_monitor_card.dart';
+import '../widgets/gamification_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -100,13 +101,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 horizontal: Get.width * 0.04, 
                 vertical: Get.height * 0.01
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  _buildTabChip(0, 'Health Tracking'),
-                  SizedBox(width: Get.width * 0.03),
-                  _buildTabChip(1, 'Health Monitor'),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    _buildTabChip(0, 'Health Tracking'),
+                    SizedBox(width: Get.width * 0.03),
+                    _buildTabChip(1, 'Health Monitor'),
+                    SizedBox(width: Get.width * 0.03),
+                    _buildTabChip(2, 'Games'),
+                  ],
+                ),
               ),
             ),
             
@@ -118,11 +124,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     accentColor: ThemeConstants.accentColor,
                     backgroundColor: ThemeConstants.backgroundColor,
                   )
-                : HealthMonitorCard(
-                    primaryColor: ThemeConstants.primaryColor,
-                    accentColor: ThemeConstants.accentColor,
-                    backgroundColor: ThemeConstants.backgroundColor,
-                  )
+                : _selectedTabIndex == 1
+                  ? HealthMonitorCard(
+                      primaryColor: ThemeConstants.primaryColor,
+                      accentColor: ThemeConstants.accentColor,
+                      backgroundColor: ThemeConstants.backgroundColor,
+                    )
+                  : GamificationCard(
+                      primaryColor: ThemeConstants.primaryColor,
+                      accentColor: ThemeConstants.accentColor,
+                      backgroundColor: ThemeConstants.backgroundColor,
+                    )
             ),
           ],
         ),
@@ -173,4 +185,4 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-} 
+}
