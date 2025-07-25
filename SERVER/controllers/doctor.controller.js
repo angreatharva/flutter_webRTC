@@ -3,7 +3,7 @@ const doctorService = require("../services/doctor.services");
 const socketService = require("../services/socket.service");
 
 const doctorController = {
-  // Get all available doctors
+  // Get all available doctors (optimized - NO IMAGE DATA)
   getAvailableDoctors: async (req, res) => {
     try {
       const doctors = await Doctor.find({ isActive: true });

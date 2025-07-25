@@ -109,10 +109,10 @@ const doctorSchema = new Schema({
     required: true,
     unique: true,
   },
-  image: {
-    required: true,
-    type: Buffer,
-  },
+  // image: {
+  //   required: true,
+  //   type: Buffer,
+  // },
   isActive: {
     required: true,
     default: false,

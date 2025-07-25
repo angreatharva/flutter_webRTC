@@ -3,11 +3,28 @@ const UserModel = require('../models/user.model');
 const CallRequestModel = require('../models/callRequest.model');
 const socketService = require('../services/socket.service');
 
-// Get all active doctors
+// Get all active doctors (optimized for performance - NO IMAGE DATA)
 const getActiveDoctors = async (req, res) => {
   try {
-    const activeDoctors = await DoctorModel.find({ isActive: true })
-      .select('doctorName specialization qualification image');
+    // Highly optimized query - explicitly exclude image and password fields
+    const activeDoctors = await DoctorModel.find(
+      { isActive: true }, 
+      {
+        // Only select essential fields, completely exclude image and password
+        doctorName: 1, 
+        specialization: 1, 
+        qualification: 1,
+        email: 1,
+        phone: 1,
+        age: 1,
+        gender: 1,
+        isActive: 1
+        // image and password fields are NOT selected (massive performance boost)
+      }
+    )
+    .lean() // Return plain objects for better performance
+    .sort({ doctorName: 1 }) // Consistent ordering
+    .exec(); // Better performance
 
     res.status(200).json({
       success: true,
