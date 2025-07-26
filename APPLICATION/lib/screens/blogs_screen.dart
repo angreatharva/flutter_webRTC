@@ -207,7 +207,6 @@ class _BlogsScreenState extends State<BlogsScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Description text - similar to Health Dashboard
           Padding(
             padding: EdgeInsets.symmetric(horizontal: Get.width * 0.06),
             child: Column(
@@ -323,7 +322,6 @@ class _BlogsScreenState extends State<BlogsScreen> {
                             controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
                             itemCount: _blogs.length + (_isLoading ? 1 : 0),
-                            padding: EdgeInsets.only(bottom: Get.height * 0.1),
                             itemBuilder: (context, index) {
                               if (index == _blogs.length) {
                                 return Center(
@@ -384,7 +382,7 @@ class _BlogsScreenState extends State<BlogsScreen> {
                                         if (result == true && blog.id != null) {
                                           try {
                                             final response = await BlogService.instance.deleteBlog(blog.id!);
-                                            
+
                                             if (response['success']) {
                                               _refreshBlogs();
                                               if (mounted) {

@@ -127,19 +127,37 @@ router.post('/register/user', userController.registerUser);
  *             required:
  *               - doctorName
  *               - email
- *               - password
+ *               - phone
+ *               - age
+ *               - gender
+ *               - qualification
  *               - specialization
+ *               - licenseNumber
+ *               - password
  *             properties:
  *               doctorName:
  *                 type: string
  *               email:
  *                 type: string
  *                 format: email
+ *               phone:
+ *                 type: string
+ *               age:
+ *                 type: integer
+ *               gender:
+ *                 type: string
+ *               qualification:
+ *                 type: string
+ *               specialization:
+ *                 type: string
+ *               licenseNumber:
+ *                 type: string
  *               password:
  *                 type: string
  *                 format: password
- *               specialization:
+ *               image:
  *                 type: string
+ *                 description: Base64 encoded image
  *     responses:
  *       201:
  *         description: Doctor registered successfully

@@ -50,6 +50,16 @@ class UserService {
       throw e;
     }
   };
+
+  static findUserByEmail = async (email) => {
+    try {
+      const user = await UserModel.findOne({ email });
+      return user;
+    } catch (e) {
+      console.error('Error finding user by email:', e);
+      throw e;
+    }
+  };
 }
 
 module.exports = UserService;

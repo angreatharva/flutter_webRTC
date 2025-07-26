@@ -6,11 +6,11 @@ const socketService = require('../services/socket.service');
 // Get all active doctors (optimized for performance - NO IMAGE DATA)
 const getActiveDoctors = async (req, res) => {
   try {
-    // Highly optimized query - explicitly exclude image and password fields
+    // Query active doctors with image data but exclude password
     const activeDoctors = await DoctorModel.find(
       { isActive: true }, 
       {
-        // Only select essential fields, completely exclude image and password
+        // Select essential fields including image, but exclude password
         doctorName: 1, 
         specialization: 1, 
         qualification: 1,
@@ -18,8 +18,9 @@ const getActiveDoctors = async (req, res) => {
         phone: 1,
         age: 1,
         gender: 1,
-        isActive: 1
-        // image and password fields are NOT selected (massive performance boost)
+        isActive: 1,
+        image: 1 // Include image field for profile pictures
+        // password field is NOT selected for security
       }
     )
     .lean() // Return plain objects for better performance

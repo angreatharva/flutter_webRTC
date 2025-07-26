@@ -3,10 +3,16 @@ const doctorService = require("../services/doctor.services");
 const socketService = require("../services/socket.service");
 
 const doctorController = {
-  // Get all available doctors (optimized - NO IMAGE DATA)
+  // Get all available doctors (includes image data for profile pictures)
   getAvailableDoctors: async (req, res) => {
     try {
-      const doctors = await Doctor.find({ isActive: true });
+      const doctors = await Doctor.find(
+        { isActive: true },
+        {
+          // Select all fields except password for security
+          password: 0
+        }
+      );
       res.json({
         success: true,
         doctors: doctors
@@ -133,39 +139,80 @@ const doctorController = {
 
   // Register a new doctor
   registerDoctor: async (req, res) => {
-    const { image } = req.body;
-
-    if (!image) {
-      return res.status(400).json({
-        success: false,
-        message: "No image uploaded.",
-      });
-    }
-
     try {
-      // Decode the base64 string to buffer
-      const imageBuffer = Buffer.from(image, "base64");
+      const {
+        doctorName,
+        email,
+        phone,
+        age,
+        gender,
+        qualification,
+        specialization,
+        licenseNumber,
+        password,
+        image
+      } = req.body;
 
-      // Prepare doctor data from request body and image buffer
+      // Validate required fields
+      if (!doctorName || !email || !phone || !age || !gender || 
+          !qualification || !specialization || !licenseNumber || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "All fields are required.",
+        });
+      }
+
+      // Check if doctor already exists
+      const existingDoctor = await Doctor.findOne({ 
+        $or: [{ email }, { licenseNumber }] 
+      });
+      
+      if (existingDoctor) {
+        return res.status(400).json({
+          success: false,
+          message: "Doctor with this email or license number already exists.",
+        });
+      }
+
+      // Prepare doctor data
       const doctorData = {
-        name: req.body.doctorName,
-        email: req.body.email,
-        password: req.body.password,
-        specialization: req.body.specialization,
-        imageUrl: req.body.imageUrl || 'https://picsum.photos/200', // Default avatar if no image
-        rating: 0, // Default rating for new doctors
+        doctorName,
+        email,
+        phone,
+        age: parseInt(age),
+        gender,
+        qualification,
+        specialization,
+        licenseNumber,
+        password,
+        image: image || null, // Store base64 image or null
         isActive: false // Default to inactive
       };
 
       const doctor = new Doctor(doctorData);
       const savedDoctor = await doctor.save();
 
+      // Remove password from response
+      const doctorResponse = savedDoctor.toObject();
+      delete doctorResponse.password;
+
       res.status(201).json({
         success: true,
-        data: savedDoctor,
+        data: doctorResponse,
         message: "Doctor registered successfully!",
       });
     } catch (error) {
+      console.error("Error registering doctor:", error);
+      
+      if (error.code === 11000) {
+        // Duplicate key error
+        const field = Object.keys(error.keyPattern)[0];
+        return res.status(400).json({
+          success: false,
+          message: `Doctor with this ${field} already exists.`,
+        });
+      }
+      
       res.status(500).json({
         success: false,
         message: "Error registering doctor: " + error.message,

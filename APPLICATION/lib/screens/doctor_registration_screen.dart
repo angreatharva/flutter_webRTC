@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -33,11 +34,40 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
   final _picker = ImagePicker();
 
   Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 70, // Compress to 70% quality
+    );
     if (pickedFile != null) {
       setState(() {
         _imageFile = File(pickedFile.path);
       });
+    }
+  }
+
+  // Helper function to compress image to base64 with size limit
+  Future<String?> _compressImageToBase64(File imageFile) async {
+    try {
+      Uint8List imageBytes = await imageFile.readAsBytes();
+      
+      // If image is larger than 5MB, show error
+      if (imageBytes.length > 5 * 1024 * 1024) {
+        Get.snackbar(
+          'Image Too Large',
+          'Please select an image smaller than 5MB',
+          backgroundColor: Colors.orange,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return null;
+      }
+      
+      return base64Encode(imageBytes);
+    } catch (e) {
+      print('Error compressing image: $e');
+      return null;
     }
   }
 
@@ -174,7 +204,15 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
                     controller: _nameController,
                     icon: Icons.person_outline,
                     hint: 'Full Name',
-                    validator: (value) => value!.isEmpty ? 'Please enter your name' : null,
+                    validator: (value) {
+                      if (value!.isEmpty) {
+                        return 'Please enter your name';
+                      }
+                      if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(value)) {
+                        return 'Name should contain only letters and spaces';
+                      }
+                      return null;
+                    },
                   ),
                   SizedBox(height: Get.height * 0.02),
                   
@@ -188,8 +226,8 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
                       if (value!.isEmpty) {
                         return 'Please enter your email';
                       }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
+                      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
+                        return 'Please enter a valid email address';
                       }
                       return null;
                     },
@@ -203,6 +241,7 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
                     hint: 'Phone Number',
                     keyboardType: TextInputType.phone,
                     maxLength: 10,
+                    numbersOnly: true,
                     validator: (value) {
                       if (value!.isEmpty) {
                         return 'Please enter your phone number';
@@ -221,6 +260,7 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
                     icon: Icons.calendar_today_outlined,
                     hint: 'Age',
                     keyboardType: TextInputType.number,
+                    numbersOnly: true,
                     validator: (value) {
                       if (value!.isEmpty) {
                         return 'Please enter your age';
@@ -436,6 +476,7 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
     TextInputType keyboardType = TextInputType.text,
     required String? Function(String?) validator,
     int? maxLength,
+    bool numbersOnly = false,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -474,9 +515,9 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
         style: TextStyle(fontSize: Get.width * 0.04),
         validator: validator,
         maxLength: maxLength,
-        inputFormatters: [
+        inputFormatters: numbersOnly ? [
           FilteringTextInputFormatter.digitsOnly,
-        ],
+        ] : null,
       ),
     );
   }
@@ -497,8 +538,14 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final bytes = await _imageFile!.readAsBytes();
-      final base64Image = base64Encode(bytes);
+      String? base64Image;
+      if (_imageFile != null) {
+        base64Image = await _compressImageToBase64(_imageFile!);
+        if (base64Image == null) {
+          setState(() => _isLoading = false);
+          return; // Error already shown in _compressImageToBase64
+        }
+      }
 
       final doctorData = {
         'doctorName': _nameController.text,
@@ -526,12 +573,26 @@ class _DoctorRegistrationScreenState extends State<DoctorRegistrationScreen> {
         );
       }
     } catch (e) {
+      String errorMessage = e.toString();
+      if (errorMessage.contains('Exception:')) {
+        errorMessage = errorMessage.replaceFirst('Exception: ', '');
+      }
+      if (errorMessage.contains('Failed to register doctor:')) {
+        errorMessage = errorMessage.replaceFirst('Failed to register doctor: ', '');
+      }
+      
+      // Handle specific error cases
+      if (errorMessage.contains('413') || errorMessage.contains('too large') || errorMessage.contains('PAYLOAD_TOO_LARGE')) {
+        errorMessage = 'Image file is too large. Please select a smaller image (under 5MB).';
+      }
+      
       Get.snackbar(
-        'Error',
-        e.toString(),
+        'Registration Failed',
+        errorMessage,
         backgroundColor: Colors.red,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
+        duration: Duration(seconds: 4),
       );
     } finally {
       setState(() => _isLoading = false);

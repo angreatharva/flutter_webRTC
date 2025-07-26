@@ -26,7 +26,8 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increase JSON payload limit for base64 images
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded payload limit
 
 // Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, { explorer: true }));
@@ -44,6 +45,19 @@ app.use('/api/doctors', require('./routes/doctor.routes'));
 app.use('/api/health', require('./routes/health.routes'));
 app.use('/api/video-call', require('./routes/videoCall.routes'));
 app.use('/api/blogs', require('./routes/blog.routes'));
+app.use('/api/upload', require('./routes/upload.routes'));
+
+// Handle payload too large errors
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'File too large. Please upload an image smaller than 50MB.',
+      error: 'PAYLOAD_TOO_LARGE'
+    });
+  }
+  next(error);
+});
 
 // Error handling middleware (must be after routes)
 app.use(errorHandler);

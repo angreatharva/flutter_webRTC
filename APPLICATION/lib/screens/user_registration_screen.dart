@@ -143,7 +143,15 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
                     controller: _nameController,
                     icon: Icons.person_outline,
                     hint: 'Full Name',
-                    validator: (value) => value!.isEmpty ? 'Please enter your name' : null,
+                    validator: (value) {
+                      if (value!.isEmpty) {
+                        return 'Please enter your name';
+                      }
+                      if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(value)) {
+                        return 'Name should contain only letters and spaces';
+                      }
+                      return null;
+                    },
                   ),
                   SizedBox(height: Get.height * 0.02),
                   
@@ -157,8 +165,8 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
                       if (value!.isEmpty) {
                         return 'Please enter your email';
                       }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
+                      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
+                        return 'Please enter a valid email address';
                       }
                       return null;
                     },
@@ -172,6 +180,7 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
                     hint: 'Phone Number',
                     keyboardType: TextInputType.phone,
                     maxLength: 10,
+                    numbersOnly: true,
                     validator: (value) {
                       if (value!.isEmpty) {
                         return 'Please enter your phone number';
@@ -190,6 +199,7 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
                     icon: Icons.calendar_today_outlined,
                     hint: 'Age',
                     keyboardType: TextInputType.number,
+                    numbersOnly: true,
                     validator: (value) {
                       if (value!.isEmpty) {
                         return 'Please enter your age';
@@ -378,6 +388,7 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
     TextInputType keyboardType = TextInputType.text,
     required String? Function(String?) validator,
     int? maxLength,
+    bool numbersOnly = false,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -416,9 +427,9 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
         style: TextStyle(fontSize: Get.width * 0.04),
         validator: validator,
         maxLength: maxLength,
-        inputFormatters: [
+        inputFormatters: numbersOnly ? [
           FilteringTextInputFormatter.digitsOnly,
-        ],
+        ] : null,
       ),
     );
   }
@@ -451,12 +462,21 @@ class _UserRegistrationScreenState extends State<UserRegistrationScreen> {
         );
       }
     } catch (e) {
+      String errorMessage = e.toString();
+      if (errorMessage.contains('Exception:')) {
+        errorMessage = errorMessage.replaceFirst('Exception: ', '');
+      }
+      if (errorMessage.contains('Failed to register user:')) {
+        errorMessage = errorMessage.replaceFirst('Failed to register user: ', '');
+      }
+      
       Get.snackbar(
-        'Error',
-        e.toString(),
+        'Registration Failed',
+        errorMessage,
         backgroundColor: Colors.red,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
+        duration: Duration(seconds: 4),
       );
     } finally {
       setState(() => _isLoading = false);

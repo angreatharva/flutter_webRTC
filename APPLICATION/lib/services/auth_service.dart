@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -177,8 +179,52 @@ class AuthService {
 
       if (response.statusCode == 201) {
         return jsonDecode(response.body);
+      } else if (response.statusCode == 413) {
+        throw Exception('Image file is too large. Please select a smaller image.');
       } else {
-        throw Exception(jsonDecode(response.body)['message']);
+        final errorBody = jsonDecode(response.body);
+        throw Exception(errorBody['message'] ?? 'Registration failed');
+      }
+    } catch (e) {
+      throw Exception('Failed to register doctor: $e');
+    }
+  }
+
+  // Alternative method for multipart form data upload
+  Future<Map<String, dynamic>> registerDoctorWithFile(
+    Map<String, dynamic> doctorData, 
+    File? imageFile
+  ) async {
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiService.baseUrl}/api/upload/doctor-registration'),
+      );
+
+      // Add text fields
+      doctorData.forEach((key, value) {
+        if (key != 'image') {
+          request.fields[key] = value.toString();
+        }
+      });
+
+      // Add image file if provided
+      if (imageFile != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imageFile.path)
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else if (response.statusCode == 413) {
+        throw Exception('Image file is too large. Please select a smaller image.');
+      } else {
+        final errorBody = jsonDecode(response.body);
+        throw Exception(errorBody['message'] ?? 'Registration failed');
       }
     } catch (e) {
       throw Exception('Failed to register doctor: $e');

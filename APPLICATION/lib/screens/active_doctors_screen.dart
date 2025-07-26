@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:developer';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -54,6 +56,62 @@ class _ActiveDoctorsScreenState extends State<ActiveDoctorsScreen> {
 
   Future<void> _fetchActiveDoctors() async {
     await _callingController.fetchActiveDoctors();
+  }
+
+  // Build doctor avatar with image or default icon
+  Widget _buildDoctorAvatar(Map<String, dynamic> doctor) {
+    final imageData = doctor['image'];
+    
+    if (imageData != null && imageData.toString().isNotEmpty) {
+      try {
+        Uint8List imageBytes;
+        
+        // Handle base64 image data
+        if (imageData.toString().startsWith('data:image')) {
+          // Remove data URL prefix if present
+          final base64String = imageData.toString().split(',').last;
+          imageBytes = base64Decode(base64String);
+        } else {
+          // Handle plain base64 string
+          imageBytes = base64Decode(imageData.toString());
+        }
+        
+        // Check if image is too large (over 10MB)
+        if (imageBytes.length > 10 * 1024 * 1024) {
+          print('Doctor image too large: ${imageBytes.length} bytes');
+          return _buildDefaultAvatar();
+        }
+        
+        return CircleAvatar(
+          radius: Get.width * 0.075,
+          backgroundImage: MemoryImage(imageBytes),
+          backgroundColor: const Color(0xFF284C1C),
+          onBackgroundImageError: (exception, stackTrace) {
+            print('Error loading doctor image: $exception');
+          },
+        );
+      } catch (e) {
+        // If image decoding fails, show default icon
+        print('Error decoding doctor image: $e');
+        return _buildDefaultAvatar();
+      }
+    } else {
+      // No image data, show default icon
+      return _buildDefaultAvatar();
+    }
+  }
+
+  // Build default avatar
+  Widget _buildDefaultAvatar() {
+    return CircleAvatar(
+      radius: Get.width * 0.075,
+      backgroundColor: const Color(0xFF284C1C),
+      child: Icon(
+        Icons.person,
+        size: Get.width * 0.09,
+        color: Colors.white,
+      ),
+    );
   }
 
   // Fetch doctor name from ID
@@ -291,15 +349,7 @@ class _ActiveDoctorsScreenState extends State<ActiveDoctorsScreen> {
                                   Row(
                                     children: [
                                       // Doctor image
-                                      CircleAvatar(
-                                        radius: Get.width * 0.075,
-                                        backgroundColor: const Color(0xFF284C1C),
-                                        child: Icon(
-                                          Icons.person,
-                                          size: Get.width * 0.09,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                      _buildDoctorAvatar(doctor),
                                       SizedBox(width: Get.width * 0.04),
                                       // Doctor info
                                       Expanded(
@@ -338,29 +388,6 @@ class _ActiveDoctorsScreenState extends State<ActiveDoctorsScreen> {
                                       ),
                                     ],
                                   ),
-                                  SizedBox(height: Get.height * 0.015),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.medical_information,
-                                        size: Get.width * 0.04,
-                                        color: Colors.black87,
-                                      ),
-                                      SizedBox(width: Get.width * 0.02),
-                                      Expanded(
-                                        child: Text(
-                                          doctor['specialization'] != null
-                                              ? 'Specialist in ${doctor['specialization']}'
-                                              : 'General Practitioner',
-                                          style: TextStyle(
-                                            fontSize: Get.width * 0.035,
-                                            color: Colors.black87,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                                   SizedBox(height: Get.height * 0.01),
                                   Align(
                                     alignment: Alignment.center,
@@ -377,7 +404,7 @@ class _ActiveDoctorsScreenState extends State<ActiveDoctorsScreen> {
                                         backgroundColor: const Color(0xFF284C1C),
                                         foregroundColor: Colors.white,
                                         padding: EdgeInsets.symmetric(
-                                          horizontal: Get.width * 0.04, 
+                                          horizontal: Get.width * 0.1,
                                           vertical: Get.height * 0.012
                                         ),
                                         shape: RoundedRectangleBorder(

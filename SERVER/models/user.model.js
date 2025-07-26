@@ -53,27 +53,52 @@ const userSchema = new Schema({
   userName: {
     type: String,
     required: true,
+    trim: true,
+    validate: {
+      validator: function(v) {
+        return /^[a-zA-Z\s]+$/.test(v);
+      },
+      message: 'User name should contain only letters and spaces'
+    }
   },
   phone: {
     type: String,
     required: true,
+    validate: {
+      validator: function(v) {
+        return /^\d{10}$/.test(v);
+      },
+      message: 'Phone number must be exactly 10 digits'
+    }
   },
   age: {
     type: Number,
     required: true,
+    min: [0, 'Age must be a positive number'],
+    max: [120, 'Age must be less than 120']
   },
   gender: {
     type: String,
     required: true,
+    enum: ['Male', 'Female', 'Other']
   },
   email: {
     type: String,
     required: true,
     unique: true,
+    lowercase: true,
+    trim: true,
+    validate: {
+      validator: function(v) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+      },
+      message: 'Please enter a valid email address'
+    }
   },
   password: {
     type: String,
     required: true,
+    minlength: [6, 'Password must be at least 6 characters long']
   },
 });
 

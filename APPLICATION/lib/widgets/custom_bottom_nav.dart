@@ -11,11 +11,13 @@ class CustomBottomNav extends GetView<NavigationController> {
   Widget build(BuildContext context) {
     return Container(
       height: Get.height * 0.085,
-      margin: EdgeInsets.symmetric(
-        horizontal: Get.width * 0.04, 
-        vertical: Get.height * 0.012
+      margin: EdgeInsets.only(
+        left: Get.width * 0.04,
+        right: Get.width * 0.04,
+        bottom: Get.height * 0.02
       ),
       decoration: BoxDecoration(
+        // color: Colors.red,
         color: ThemeConstants.mainColor,
         borderRadius: BorderRadius.circular(Get.width * 0.12),
         boxShadow: [
